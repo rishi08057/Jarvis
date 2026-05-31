@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from agents import AgentController
+
 from .session import ChatSession
 
 
@@ -17,6 +19,7 @@ class TerminalChatApp:
     """
 
     session: ChatSession
+    controller: AgentController | None = None
     assistant_name: str = "Jarvis"
     console: object | None = None
     input_provider: Callable[[str], str] | None = None
@@ -45,7 +48,10 @@ class TerminalChatApp:
                 return 0
 
             if command == "clear":
-                self.session.clear()
+                if self.controller is not None:
+                    self.controller.clear_history()
+                else:
+                    self.session.clear()
                 if hasattr(console, "clear"):
                     console.clear()  # type: ignore[call-arg]
                 self._show_banner(console)
@@ -63,7 +69,7 @@ class TerminalChatApp:
                 console.print(chunk, end="")
 
             console.print(f"{assistant_label}")
-            response = self.session.stream_response(message, on_chunk=on_chunk)
+            response = self._handle_message(message, on_chunk=on_chunk)
             console.print("")
         else:
             live_text = rich_text.Text()
@@ -78,7 +84,7 @@ class TerminalChatApp:
                 )
 
             with rich_live.Live(console=console, refresh_per_second=30, transient=True) as live:
-                response = self.session.stream_response(message, on_chunk=on_chunk)
+                response = self._handle_message(message, on_chunk=on_chunk)
                 live.update(
                     rich_panel.Panel(
                         rich_console.Group(rich_markdown.Markdown(message), rich_text.Text(str(live_text))),
@@ -104,6 +110,11 @@ class TerminalChatApp:
         if self.on_turn is not None:
             self.on_turn(message, response.message, response.elapsed_seconds, response.success)
 
+    def _handle_message(self, message: str, *, on_chunk: Callable[[str], None] | None = None):
+        if self.controller is not None:
+            return self.controller.handle(message, on_chunk=on_chunk)
+        return self.session.stream_response(message, on_chunk=on_chunk)
+
     def _show_banner(self, console: object) -> None:
         rich_console, _, _, rich_panel, rich_text = self._load_rich_primitives()
         if rich_console is None:
@@ -117,7 +128,7 @@ class TerminalChatApp:
         console.print(rich_panel.Panel(banner, border_style="bright_cyan"))
 
     def _show_help(self, console: object) -> None:
-        console.print("[dim]Commands: clear | exit | quit[/dim]")
+        console.print("[dim]Commands: clear | exit | quit | What tools are available?[/dim]")
 
     def _create_console(self) -> object:
         rich_console, *_ = self._load_rich_primitives()
