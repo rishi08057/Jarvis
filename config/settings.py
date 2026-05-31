@@ -16,7 +16,7 @@ class AppSettings:
     log_level: str = "INFO"
     assistant_name: str = "Jarvis"
     ai_provider: str = "ollama"
-    ai_model: str = "llama3.1"
+    ai_model: str = "qwen3:8b"
     ai_endpoint: str = "http://localhost:11434"
     logs_dir_name: str = "logs"
     memory_dir_name: str = "memory"
