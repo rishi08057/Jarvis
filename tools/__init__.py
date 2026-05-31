@@ -5,6 +5,7 @@ from .filesystem import FilesystemToolBase, ListDirectoryTool, ReadFileTool, Sea
 from .git_tools import GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool
 from .manager import ToolManager, ToolValidationError
 from .registry import ToolRegistry
+from .terminal import TerminalExecutionTool
 
 __all__ = [
 	"JsonSchema",
@@ -25,6 +26,7 @@ __all__ = [
 	"ReadFileTool",
 	"SearchCodeTool",
 	"SearchFilesTool",
+	"TerminalExecutionTool",
 	"build_object_schema",
 	"WriteFileTool",
 ]
