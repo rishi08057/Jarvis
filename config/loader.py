@@ -37,7 +37,7 @@ def load_settings() -> AppSettings:
         log_level=os.getenv("JARVIS_LOG_LEVEL", "INFO"),
         assistant_name=os.getenv("JARVIS_ASSISTANT_NAME", "Jarvis"),
         ai_provider=os.getenv("JARVIS_AI_PROVIDER", "ollama"),
-        ai_model=os.getenv("JARVIS_AI_MODEL", "llama3.1"),
+        ai_model=os.getenv("JARVIS_AI_MODEL", "qwen3:8b"),
         ai_endpoint=os.getenv("JARVIS_AI_ENDPOINT", "http://localhost:11434"),
         logs_dir_name=os.getenv("JARVIS_LOGS_DIR", "logs"),
         memory_dir_name=os.getenv("JARVIS_MEMORY_DIR", "memory"),
