@@ -57,6 +57,7 @@ The scaffold is intentionally small and extensible:
 - Logging is isolated in `logs/` so it can be swapped without touching business logic.
 - Agent and tool contracts are abstract, which makes it easy to add implementations later.
 - Security helpers live separately to keep input and path validation explicit.
+- Tool execution always passes through the security middleware for permission checks, approval handling, and audit logging.
 
 ## Testing
 

@@ -1,4 +1,4 @@
-"""Security and validation helpers."""
+"""General-purpose security helpers for Jarvis."""
 
 from __future__ import annotations
 
