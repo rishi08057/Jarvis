@@ -9,7 +9,7 @@ from typing import Sequence
 
 from config import AppSettings
 from llm import LLMManager
-from memory import MemoryStore
+from memory import MemoryManager
 
 from .session import ChatSession
 from .terminal import TerminalChatApp
@@ -32,22 +32,54 @@ def run(settings: AppSettings, argv: Sequence[str] | None = None) -> int:
         print(json.dumps(settings.to_dict(), indent=2, ensure_ascii=False))
         return 0
 
-    memory_store = MemoryStore(settings.memory_dir)
-    llm = LLMManager(endpoint=settings.ai_endpoint, model=settings.ai_model)
-    session = ChatSession(llm=llm)
-    app = TerminalChatApp(session=session, assistant_name=settings.assistant_name)
+    with MemoryManager(settings.memory_dir) as memory:
+        llm = LLMManager(endpoint=settings.ai_endpoint, model=settings.ai_model)
+        session = ChatSession(llm=llm)
+        conversation = memory.conversations.create(title=f"{settings.assistant_name} terminal session")
 
-    if args.message:
-        memory_store.remember("last_user_message", args.message)
-        response = session.stream_response(args.message)
-        if response.message:
-            print(response.message)
-            print(f"Response time: {response.elapsed_seconds:.2f}s")
-            return 0
+        memory.set_preference("assistant_name", settings.assistant_name)
+        memory.set_preference("ai_model", settings.ai_model)
+        memory.set_preference("ai_provider", settings.ai_provider)
+        memory.projects.upsert(
+            str(settings.project_root),
+            summary=f"Jarvis workspace rooted at {settings.project_root}",
+            title=settings.app_name,
+            metadata={"environment": settings.environment},
+        )
 
-        logger.error("LLM request failed: %s", response.error)
-        print(f"{settings.assistant_name} could not generate a response: {response.error}")
-        return 1
+        def record_turn(user_message: str, assistant_message: str | None, elapsed_seconds: float, success: bool) -> None:
+            memory.conversations.append(
+                conversation.conversation_id,
+                "user",
+                user_message,
+                metadata={"role": "user", "success": success, "elapsed_seconds": elapsed_seconds},
+            )
+            if assistant_message is not None:
+                memory.conversations.append(
+                    conversation.conversation_id,
+                    "assistant",
+                    assistant_message,
+                    metadata={"role": "assistant", "success": success, "elapsed_seconds": elapsed_seconds},
+                )
 
-    memory_store.remember("last_ui_mode", "terminal-chat")
-    return app.run()
+        app = TerminalChatApp(
+            session=session,
+            assistant_name=settings.assistant_name,
+            on_turn=record_turn,
+        )
+
+        if args.message:
+            response = session.stream_response(args.message)
+            if response.message:
+                print(response.message)
+                print(f"Response time: {response.elapsed_seconds:.2f}s")
+                record_turn(args.message, response.message, response.elapsed_seconds, response.success)
+                return 0
+
+            logger.error("LLM request failed: %s", response.error)
+            print(f"{settings.assistant_name} could not generate a response: {response.error}")
+            record_turn(args.message, None, response.elapsed_seconds, response.success)
+            return 1
+
+        memory.set_preference("last_ui_mode", "terminal-chat")
+        return app.run()

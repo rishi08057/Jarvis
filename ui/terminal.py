@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
 from .session import ChatSession
 
@@ -20,6 +20,7 @@ class TerminalChatApp:
     assistant_name: str = "Jarvis"
     console: object | None = None
     input_provider: Callable[[str], str] | None = None
+    on_turn: Callable[[str, str | None, float, bool], None] | None = None
 
     def run(self) -> int:
         console = self.console or self._create_console()
@@ -100,8 +101,11 @@ class TerminalChatApp:
                 console.print(f"[red]Response failed:[/red] {response.error or 'Unknown error'}")
                 console.print(f"[dim]Elapsed: {response.elapsed_seconds:.2f}s[/dim]")
 
+        if self.on_turn is not None:
+            self.on_turn(message, response.message, response.elapsed_seconds, response.success)
+
     def _show_banner(self, console: object) -> None:
-        rich_console, rich_live, rich_markdown, rich_panel, rich_text = self._load_rich_primitives()
+        rich_console, _, _, rich_panel, rich_text = self._load_rich_primitives()
         if rich_console is None:
             console.print(f"{self.assistant_name}")
             console.print("Terminal chat powered by Ollama")
