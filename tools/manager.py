@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from security import SecurityContext, SecurityMiddleware
+
 from .base import Tool, ToolResult
 from .registry import ToolRegistry
 
@@ -18,6 +20,7 @@ class ToolManager:
     """Coordinate tool registration, discovery, validation, and execution."""
 
     registry: ToolRegistry = field(default_factory=ToolRegistry)
+    security_middleware: SecurityMiddleware | None = None
 
     def register(self, tool: Tool) -> None:
         """Register a tool instance."""
@@ -39,12 +42,56 @@ class ToolManager:
 
         return [metadata.name for metadata in self.registry.list_tools()]
 
-    def execute(self, tool_name: str, parameters: Mapping[str, Any] | None = None) -> ToolResult:
+    def execute(
+        self,
+        tool_name: str,
+        parameters: Mapping[str, Any] | None = None,
+        *,
+        context: SecurityContext | None = None,
+    ) -> ToolResult:
         """Validate parameters and execute the selected tool."""
 
         tool = self.get(tool_name)
         validated_parameters = self._validate_parameters(tool.parameter_schema, dict(parameters or {}))
-        return tool.execute(**validated_parameters)
+        security_context = context or SecurityContext()
+        middleware = self._resolve_security_middleware()
+        decision = middleware.authorize(
+            tool_name=tool.name,
+            risk_level=tool.metadata.risk_level,
+            context=security_context,
+            parameters=validated_parameters,
+        )
+
+        try:
+            result = tool.execute(**validated_parameters)
+        except Exception as exc:
+            middleware.record_execution(
+                tool_name=tool.name,
+                risk_level=tool.metadata.risk_level,
+                context=security_context,
+                outcome="failure",
+                details={"error": str(exc)},
+            )
+            raise
+
+        middleware.record_execution(
+            tool_name=tool.name,
+            risk_level=tool.metadata.risk_level,
+            context=security_context,
+            outcome="success",
+            details={"approved": decision.approved, "approver": decision.approver},
+        )
+        return result
+
+    def _resolve_security_middleware(self) -> SecurityMiddleware:
+        if self.security_middleware is None:
+            from security import AuditLogger, LoggingAuditSink, PermissionManager
+
+            self.security_middleware = SecurityMiddleware(
+                permission_manager=PermissionManager(),
+                audit_logger=AuditLogger((LoggingAuditSink(),)),
+            )
+        return self.security_middleware
 
     def _validate_parameters(self, schema: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
         """Validate a JSON-schema-like parameter object."""

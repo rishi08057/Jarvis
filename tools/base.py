@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from security.risk import RiskLevel
+
 JsonSchema = dict[str, Any]
 
 
@@ -16,6 +18,7 @@ class ToolMetadata:
     name: str
     description: str
     version: str = "1.0.0"
+    risk_level: RiskLevel = RiskLevel.LOW
     parameters_schema: JsonSchema = field(
         default_factory=lambda: {
             "type": "object",
