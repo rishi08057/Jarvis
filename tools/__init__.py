@@ -4,6 +4,7 @@ from .base import JsonSchema, Tool, ToolMetadata, ToolResult, build_object_schem
 from .filesystem import FilesystemToolBase, ListDirectoryTool, ReadFileTool, SearchCodeTool, SearchFilesTool, WriteFileTool
 from .git_tools import GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool
 from .manager import ToolManager, ToolValidationError
+from .repository_analysis import RepositoryAnalysisTool
 from .registry import ToolRegistry
 from .terminal import TerminalExecutionTool
 
@@ -24,6 +25,7 @@ __all__ = [
 	"ToolResult",
 	"ToolValidationError",
 	"ReadFileTool",
+	"RepositoryAnalysisTool",
 	"SearchCodeTool",
 	"SearchFilesTool",
 	"TerminalExecutionTool",

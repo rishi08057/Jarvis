@@ -36,6 +36,12 @@ Jarvis is a production-ready Python 3.12 project scaffold for a local AI assista
    python main.py --show-config
    ```
 
+   To analyze the current repository and print a JSON report plus a human-readable summary, run:
+
+   ```bash
+   python main.py --analyze-repository
+   ```
+
 ## Environment Variables
 
 - `JARVIS_APP_NAME`: Display name for the application.

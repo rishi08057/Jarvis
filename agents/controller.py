@@ -206,6 +206,7 @@ class AgentController:
                 return "terminal_execute"
 
         phrase_map = {
+            "repository_analysis": ("analyze repository", "repository analysis", "scan repository", "repo analysis"),
             "read_file": ("read file", "open file"),
             "write_file": ("write file", "save file"),
             "list_directory": ("list directory", "list files", "show files"),
@@ -249,6 +250,8 @@ class AgentController:
         if tool_name in {"git_status", "git_diff", "git_log", "git_branch", "git_checkout", "git_commit"}:
             defaults["repo_path"] = str(self.default_workspace)
         if tool_name in {"read_file", "write_file", "list_directory", "search_files", "search_code"}:
+            defaults["path"] = str(self.default_workspace)
+        if tool_name == "repository_analysis":
             defaults["path"] = str(self.default_workspace)
         if tool_name == "terminal_execute":
             defaults["cwd"] = str(self.default_workspace)

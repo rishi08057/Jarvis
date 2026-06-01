@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from typing import cast
 
 from agents import AgentController
 from security import ApprovalDecision, ApprovalWorkflow, PermissionManager, RiskLevel
 from tools import Tool, ToolMetadata, ToolRegistry, ToolResult, build_object_schema
+from tools.repository_analysis import RepositoryAnalysisTool
 from ui.session import ChatResponse, ChatSession
 from ui.terminal import TerminalChatApp
 
@@ -100,6 +102,23 @@ class AgentControllerTests(unittest.TestCase):
         self.assertEqual(tool.calls[0]["message"], "hello")
         self.assertGreaterEqual(len(llm.prompts), 1)
 
+    def test_repository_analysis_request_routes_to_tool(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["Repository summary."])
+        registry = ToolRegistry()
+        tool = RepositoryAnalysisTool()
+        registry.register(tool)
+        controller = AgentController(
+            session=ChatSession(llm=llm),
+            llm=llm,
+            tool_registry=registry,
+        )
+
+        response = controller.handle("analyze repository path=d:/jarvis")
+
+        self.assertTrue(response.success)
+        self.assertEqual(response.message, "Repository summary.")
+        self.assertGreaterEqual(len(llm.prompts), 1)
+
     def test_fallback_to_llm_when_no_tool_matches(self) -> None:
         llm = FakeLLMManager(stream_chunks=["Fallback answer."])
         registry = ToolRegistry()
@@ -131,7 +150,7 @@ class AgentControllerTests(unittest.TestCase):
             def clear(self) -> None:
                 self.cleared += 1
 
-        app = TerminalChatApp(session=controller.session, controller=controller, console=Console())
+        app = TerminalChatApp(session=controller.session, controller=cast(AgentController, controller), console=Console())
 
         exit_code = app.run()
 
