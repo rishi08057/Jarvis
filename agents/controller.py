@@ -17,6 +17,17 @@ from tools.manager import ToolValidationError
 from ui.session import ChatResponse, ChatSession, ConversationTurn, SupportsLLMManager
 
 
+DIRECT_RETURN_TOOLS = {
+    "list_directory",
+    "read_file",
+    "search_files",
+    "search_code",
+    "git_status",
+    "git_log",
+    "git_diff",
+}
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -44,6 +55,7 @@ class AgentController:
         default_factory=lambda: SecurityContext(actor_id="terminal-chat", roles=("operator",))
     )
     default_workspace: Path = field(default_factory=_project_root)
+    summarize_tool_results: bool = False
     tool_manager: ToolManager = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -114,11 +126,17 @@ class AgentController:
                 on_chunk(response_text)
             return ChatResponse(message=response_text, elapsed_seconds=elapsed, success=False, error=result.message or tool_name)
 
+        if self._should_return_tool_result_directly(message, tool_name):
+            response_text = self._format_direct_tool_result(tool_name, result.payload, result.message)
+            elapsed = perf_counter() - start
+            self.session.history.append(ConversationTurn(role="assistant", content=response_text))
+            return ChatResponse(message=response_text, elapsed_seconds=elapsed, success=True)
+
         summary_prompt = self._build_tool_summary_prompt(message, tool_name, result.payload)
         response_text, success = self._stream_llm_from_prompt(summary_prompt, on_chunk=on_chunk, timeout=timeout)
         elapsed = perf_counter() - start
         if not response_text:
-            response_text = self._fallback_tool_summary(tool_name, result.payload)
+            response_text = self._format_direct_tool_result(tool_name, result.payload, result.message)
             success = True
             if on_chunk is not None:
                 on_chunk(response_text)
@@ -158,6 +176,67 @@ class AgentController:
             return response_text, True
         return "", False
 
+    def _should_return_tool_result_directly(self, message: str, tool_name: str) -> bool:
+        if self.summarize_tool_results:
+            return False
+        if tool_name == "repository_analysis":
+            return False
+        if self._user_requested_summary(message):
+            return False
+        return tool_name in DIRECT_RETURN_TOOLS
+
+    def _user_requested_summary(self, message: str) -> bool:
+        normalized = _normalize_message(message)
+        return any(keyword in normalized for keyword in ("summarize", "summary", "summarise", "recap"))
+
+    def _format_direct_tool_result(self, tool_name: str, payload: dict[str, Any], message: str | None = None) -> str:
+        if tool_name == "read_file":
+            content = payload.get("content")
+            if isinstance(content, str):
+                return content
+            return message or json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+        if tool_name == "list_directory":
+            entries = payload.get("entries")
+            if isinstance(entries, list):
+                lines = [f"{payload.get('path', '')}"] if payload.get("path") else []
+                lines.extend(str(entry) for entry in entries)
+                return "\n".join(lines)
+            return message or json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+        if tool_name in {"search_files", "search_code"}:
+            matches = payload.get("matches")
+            lines = []
+            if payload.get("path"):
+                lines.append(str(payload["path"]))
+            if payload.get("query"):
+                lines.append(f"Query: {payload['query']}")
+            if isinstance(matches, list):
+                for match in matches:
+                    lines.append(str(match))
+                return "\n".join(lines) if lines else message or json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+        if tool_name == "git_status":
+            status = payload.get("status")
+            if isinstance(status, str):
+                return status
+
+        if tool_name == "git_log":
+            commits = payload.get("commits")
+            if isinstance(commits, list):
+                return "\n".join(json.dumps(commit, ensure_ascii=False, default=str) for commit in commits)
+
+        if tool_name == "git_diff":
+            diff = payload.get("diff")
+            if isinstance(diff, str):
+                return diff
+
+        if message:
+            return message
+        if payload:
+            return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+        return f"{tool_name} completed successfully."
+
     def _build_tool_summary_prompt(self, message: str, tool_name: str, payload: dict[str, Any]) -> str:
         payload_text = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
         return (
@@ -168,9 +247,7 @@ class AgentController:
         )
 
     def _fallback_tool_summary(self, tool_name: str, payload: dict[str, Any]) -> str:
-        if payload:
-            return f"{tool_name} completed successfully: {json.dumps(payload, ensure_ascii=False, default=str)}"
-        return f"{tool_name} completed successfully."
+        return self._format_direct_tool_result(tool_name, payload)
 
     def _format_available_tools(self) -> str:
         lines = ["Available tools:"]

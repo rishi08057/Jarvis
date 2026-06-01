@@ -68,6 +68,7 @@ def run(settings: AppSettings, argv: Sequence[str] | None = None) -> int:
             tool_registry=registry,
             permission_manager=permission_manager,
             default_workspace=settings.project_root,
+            summarize_tool_results=settings.summarize_tool_results,
         )
         conversation = memory.conversations.create(title=f"{settings.assistant_name} terminal session")
 

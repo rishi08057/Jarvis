@@ -52,6 +52,7 @@ Jarvis is a production-ready Python 3.12 project scaffold for a local AI assista
 - `JARVIS_AI_MODEL`: Default model name.
 - `JARVIS_AI_ENDPOINT`: Local model endpoint.
 - `JARVIS_ENABLE_FILE_LOGGING`: Enable rotating file logs.
+- `JARVIS_SUMMARIZE_TOOL_RESULTS`: Summarize tool output through the LLM instead of returning direct tool text.
 - `JARVIS_LOGS_DIR`: Folder for log files.
 - `JARVIS_MEMORY_DIR`: Folder for stored assistant memory.
 

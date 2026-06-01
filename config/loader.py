@@ -42,6 +42,7 @@ def load_settings() -> AppSettings:
         logs_dir_name=os.getenv("JARVIS_LOGS_DIR", "logs"),
         memory_dir_name=os.getenv("JARVIS_MEMORY_DIR", "memory"),
         enable_file_logging=_parse_bool(os.getenv("JARVIS_ENABLE_FILE_LOGGING"), True),
+        summarize_tool_results=_parse_bool(os.getenv("JARVIS_SUMMARIZE_TOOL_RESULTS"), False),
     )
 
     settings.logs_dir.mkdir(parents=True, exist_ok=True)

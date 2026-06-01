@@ -21,6 +21,7 @@ class AppSettings:
     logs_dir_name: str = "logs"
     memory_dir_name: str = "memory"
     enable_file_logging: bool = True
+    summarize_tool_results: bool = False
 
     @property
     def logs_dir(self) -> Path:

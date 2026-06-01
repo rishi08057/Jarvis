@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 from agents import AgentController
 from security import ApprovalDecision, ApprovalWorkflow, PermissionManager, RiskLevel
 from tools import Tool, ToolMetadata, ToolRegistry, ToolResult, build_object_schema
+from tools.filesystem import ListDirectoryTool
 from tools.repository_analysis import RepositoryAnalysisTool
-from ui.session import ChatResponse, ChatSession
-from ui.terminal import TerminalChatApp
+from ui import ChatResponse, ChatSession
 
 
 class FakeLLMManager:
@@ -102,6 +105,61 @@ class AgentControllerTests(unittest.TestCase):
         self.assertEqual(tool.calls[0]["message"], "hello")
         self.assertGreaterEqual(len(llm.prompts), 1)
 
+    def test_list_directory_returns_direct_result_without_llm(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["unused"])
+        registry = ToolRegistry()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "notes.txt").write_text("hello jarvis", encoding="utf-8")
+            registry.register(ListDirectoryTool(approved_directories=(root,)))
+            controller = AgentController(session=ChatSession(llm=llm), llm=llm, tool_registry=registry, default_workspace=root)
+
+            response = controller.handle("list directory")
+
+        self.assertTrue(response.success)
+        self.assertEqual(llm.prompts, [])
+        self.assertIn("notes.txt", response.message or "")
+
+    def test_explicit_summary_request_invokes_llm_for_direct_tool(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["Summarized listing."])
+        registry = ToolRegistry()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "notes.txt").write_text("hello jarvis", encoding="utf-8")
+            registry.register(ListDirectoryTool(approved_directories=(root,)))
+            controller = AgentController(session=ChatSession(llm=llm), llm=llm, tool_registry=registry, default_workspace=root)
+
+            response = controller.handle("summarize the directory listing")
+
+        self.assertTrue(response.success)
+        self.assertEqual(response.message, "Summarized listing.")
+        self.assertGreaterEqual(len(llm.prompts), 1)
+
+    def test_tool_request_reports_elapsed_time_for_entire_request(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["The tool ran successfully."])
+        registry = ToolRegistry()
+        registry.register(EchoTool())
+        controller = AgentController(session=ChatSession(llm=llm), llm=llm, tool_registry=registry)
+
+        with patch("agents.controller.perf_counter", side_effect=[5.0, 5.42]):
+            response = controller.handle("echo_demo message=hello")
+
+        self.assertTrue(response.success)
+        self.assertAlmostEqual(response.elapsed_seconds, 0.42, places=2)
+
+    def test_llm_request_reports_elapsed_time_for_each_message(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["Fallback answer."])
+        registry = ToolRegistry()
+        controller = AgentController(session=ChatSession(llm=llm), llm=llm, tool_registry=registry)
+
+        with patch("agents.controller.perf_counter", side_effect=[9.0, 9.33]):
+            response = controller.handle("Tell me something unrelated.")
+
+        self.assertTrue(response.success)
+        self.assertAlmostEqual(response.elapsed_seconds, 0.33, places=2)
+
     def test_repository_analysis_request_routes_to_tool(self) -> None:
         llm = FakeLLMManager(stream_chunks=["Repository summary."])
         registry = ToolRegistry()
@@ -131,6 +189,8 @@ class AgentControllerTests(unittest.TestCase):
         self.assertIn("Tell me something unrelated.", llm.prompts[0])
 
     def test_terminal_chat_app_uses_controller_path(self) -> None:
+        from ui import TerminalChatApp
+
         controller = FakeController()
 
         class Console:

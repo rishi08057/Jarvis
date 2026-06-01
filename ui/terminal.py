@@ -29,7 +29,19 @@ class TerminalChatApp:
         console = self.console or self._create_console()
         input_provider = self.input_provider or console.input  # type: ignore[assignment]
 
-        self._show_banner(console)
+        def show_banner() -> None:
+            rich_console, _, _, rich_panel, rich_text = self._load_rich_primitives()
+            if rich_console is None:
+                console.print(f"{self.assistant_name}")
+                console.print("Terminal chat powered by Ollama")
+                return
+
+            banner = rich_text.Text()
+            banner.append(f"{self.assistant_name}\n", style="bold bright_cyan")
+            banner.append("Terminal chat powered by Ollama", style="dim")
+            console.print(rich_panel.Panel(banner, border_style="bright_cyan"))
+
+        show_banner()
         self._show_help(console)
 
         while True:
@@ -54,7 +66,7 @@ class TerminalChatApp:
                     self.session.clear()
                 if hasattr(console, "clear"):
                     console.clear()  # type: ignore[call-arg]
-                self._show_banner(console)
+                show_banner()
                 self._show_help(console)
                 continue
 
@@ -63,9 +75,12 @@ class TerminalChatApp:
     def _render_exchange(self, console: object, message: str) -> None:
         assistant_label = f"{self.assistant_name} >"
         rich_console, rich_live, rich_markdown, rich_panel, rich_text = self._load_rich_primitives()
+        streamed_output = False
 
         if rich_console is None:
             def on_chunk(chunk: str) -> None:
+                nonlocal streamed_output
+                streamed_output = True
                 console.print(chunk, end="")
 
             console.print(f"{assistant_label}")
@@ -75,6 +90,8 @@ class TerminalChatApp:
             live_text = rich_text.Text()
 
             def on_chunk(chunk: str) -> None:
+                nonlocal streamed_output
+                streamed_output = True
                 live_text.append(chunk)
                 live.update(
                     rich_panel.Panel(
@@ -93,11 +110,15 @@ class TerminalChatApp:
                 )
 
         if response.success:
+            if not streamed_output:
+                if rich_console is None:
+                    console.print(response.message or "")
+                else:
+                    console.print(rich_panel.Panel(rich_markdown.Markdown(response.message or ""), title=assistant_label))
+
             if rich_console is None:
-                console.print(response.message or "")
                 console.print(f"Response time: {response.elapsed_seconds:.2f}s")
             else:
-                console.print(rich_panel.Panel(rich_markdown.Markdown(response.message or ""), title=assistant_label))
                 console.print(f"[dim]Response time: {response.elapsed_seconds:.2f}s[/dim]")
         else:
             if rich_console is None:
@@ -114,18 +135,6 @@ class TerminalChatApp:
         if self.controller is not None:
             return self.controller.handle(message, on_chunk=on_chunk)
         return self.session.stream_response(message, on_chunk=on_chunk)
-
-    def _show_banner(self, console: object) -> None:
-        rich_console, _, _, rich_panel, rich_text = self._load_rich_primitives()
-        if rich_console is None:
-            console.print(f"{self.assistant_name}")
-            console.print("Terminal chat powered by Ollama")
-            return
-
-        banner = rich_text.Text()
-        banner.append(f"{self.assistant_name}\n", style="bold bright_cyan")
-        banner.append("Terminal chat powered by Ollama", style="dim")
-        console.print(rich_panel.Panel(banner, border_style="bright_cyan"))
 
     def _show_help(self, console: object) -> None:
         console.print("[dim]Commands: clear | exit | quit | What tools are available?[/dim]")

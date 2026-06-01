@@ -57,7 +57,7 @@ class ChatResponse:
 class ChatSession:
     """Manage reusable conversation history and prompt assembly."""
 
-    llm: SupportsLLMManager
+    llm: Any
     system_prompt: str = "You are Jarvis, a concise and helpful terminal assistant."
     max_turns: int = 12
     history: list[ConversationTurn] = field(default_factory=list)
@@ -87,12 +87,12 @@ class ChatSession:
     ) -> ChatResponse:
         """Stream a response, update history, and return timing information."""
 
+        start = perf_counter()
         prompt = self.build_prompt(message)
         self.history.append(ConversationTurn(role="user", content=message))
-
-        start = perf_counter()
         chunks: list[str] = []
-        for chunk in self.llm.stream_generate(prompt, system=self.system_prompt, timeout=timeout):
+        response_stream = self.llm.stream_generate(prompt, system=self.system_prompt, timeout=timeout) or ()
+        for chunk in response_stream:
             if not chunk:
                 continue
             chunks.append(chunk)
@@ -115,10 +115,9 @@ class ChatSession:
     def generate_response(self, message: str, *, timeout: float | None = None) -> ChatResponse:
         """Generate a non-streaming response, primarily for one-shot prompts."""
 
+        start = perf_counter()
         prompt = self.build_prompt(message)
         self.history.append(ConversationTurn(role="user", content=message))
-
-        start = perf_counter()
         response_text = self.llm.generate(prompt, system=self.system_prompt, timeout=timeout)
         elapsed_seconds = perf_counter() - start
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from ui.session import ChatResponse, ChatSession, ConversationTurn
-from ui.terminal import TerminalChatApp
+from ui import ChatResponse, ChatSession, ConversationTurn, TerminalChatApp
 
 
 class FakeLLMManager:
@@ -14,10 +14,14 @@ class FakeLLMManager:
         self.prompts: list[str] = []
 
     def generate(self, prompt: str, *, system: str | None = None, model: str | None = None, options=None, timeout=None):
+        _ = prompt
+        _ = (system, model, options, timeout)
         self.prompts.append(prompt)
         return self.response_text
 
     def stream_generate(self, prompt: str, *, system: str | None = None, model: str | None = None, options=None, timeout=None):
+        _ = prompt
+        _ = (system, model, options, timeout)
         self.prompts.append(prompt)
         for chunk in self.stream_chunks:
             yield chunk
@@ -29,12 +33,12 @@ class FakeConsole:
         self.printed: list[object] = []
         self.cleared = 0
 
-    def input(self, prompt: str) -> str:
+    def input(self, _prompt: str) -> str:
         if not self.inputs:
             raise EOFError
         return self.inputs.pop(0)
 
-    def print(self, *values, **kwargs) -> None:
+    def print(self, *values, **_kwargs) -> None:
         if len(values) == 1:
             self.printed.append(values[0])
         else:
@@ -45,6 +49,29 @@ class FakeConsole:
 
 
 class ChatSessionTests(unittest.TestCase):
+    def test_stream_response_measures_each_request_independently(self) -> None:
+        llm = FakeLLMManager(stream_chunks=["hello"])
+        session = ChatSession(llm=llm)
+
+        with patch("ui.session.perf_counter", side_effect=[10.0, 10.25, 20.0, 20.5]):
+            first = session.stream_response("one")
+            second = session.stream_response("two")
+
+        self.assertTrue(first.success)
+        self.assertTrue(second.success)
+        self.assertEqual(first.elapsed_seconds, 0.25)
+        self.assertEqual(second.elapsed_seconds, 0.5)
+
+    def test_generate_response_measures_each_request_independently(self) -> None:
+        llm = FakeLLMManager(response_text="hello")
+        session = ChatSession(llm=llm)
+
+        with patch("ui.session.perf_counter", side_effect=[30.0, 30.4]):
+            response = session.generate_response("hi")
+
+        self.assertTrue(response.success)
+        self.assertAlmostEqual(response.elapsed_seconds, 0.4, places=2)
+
     def test_stream_response_updates_history_and_tracks_timing(self) -> None:
         llm = FakeLLMManager(stream_chunks=["hel", "lo"])
         session = ChatSession(llm=llm)
@@ -108,6 +135,26 @@ class TerminalChatAppTests(unittest.TestCase):
         self.assertTrue(response.success)
         self.assertIsInstance(response, ChatResponse)
         self.assertEqual(llm.prompts[0].splitlines()[-2], "User: Hi")
+
+    def test_streamed_response_is_rendered_once(self) -> None:
+        class FakeController:
+            def __init__(self) -> None:
+                self.session = ChatSession(llm=FakeLLMManager())
+
+            def handle(self, message: str, *, on_chunk=None, timeout=None):
+                _ = (message, timeout)
+                if on_chunk is not None:
+                    on_chunk("controller-response")
+                return ChatResponse(message="controller-response", elapsed_seconds=0.12, success=True)
+
+        console = FakeConsole(["analyze repository", "exit"])
+        app = TerminalChatApp(session=ChatSession(llm=FakeLLMManager()), controller=FakeController(), console=console)
+
+        with patch.dict("sys.modules", {"rich": None}):
+            exit_code = app.run()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(console.printed.count("controller-response"), 1)
 
 
 if __name__ == "__main__":
