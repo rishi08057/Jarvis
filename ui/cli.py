@@ -12,7 +12,7 @@ from config import AppSettings
 from llm import LLMManager
 from memory import MemoryManager
 from security import PermissionManager
-from tools import ToolRegistry
+from tools import ToolManager, ToolRegistry
 
 from .session import ChatSession
 from .terminal import TerminalChatApp
@@ -24,6 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Jarvis local AI assistant")
     parser.add_argument("--show-config", action="store_true", help="Print the active configuration")
     parser.add_argument("--message", help="Send a single message and exit")
+    parser.add_argument(
+        "--analyze-repository",
+        nargs="?",
+        const=".",
+        help="Analyze a repository and print JSON plus a human-readable report",
+    )
     return parser
 
 
@@ -33,6 +39,21 @@ def run(settings: AppSettings, argv: Sequence[str] | None = None) -> int:
 
     if args.show_config:
         print(json.dumps(settings.to_dict(), indent=2, ensure_ascii=False))
+        return 0
+
+    if args.analyze_repository is not None:
+        manager = ToolManager()
+        manager.discover("tools")
+        analysis_path = args.analyze_repository
+        if analysis_path == ".":
+            analysis_path = str(settings.project_root)
+        result = manager.execute("repository_analysis", {"path": analysis_path}, context=None)
+        if not result.success:
+            print(result.message)
+            return 1
+        print(result.message)
+        print()
+        print(json.dumps(result.payload, indent=2, ensure_ascii=False, default=str))
         return 0
 
     with MemoryManager(settings.memory_dir) as memory:

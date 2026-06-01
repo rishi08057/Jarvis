@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from tools import Tool, ToolManager, ToolMetadata, ToolRegistry, ToolResult, build_object_schema
+from tools.repository_analysis import RepositoryAnalysisTool
 
 
 class ToolFrameworkTests(unittest.TestCase):
@@ -86,6 +87,32 @@ class ToolFrameworkTests(unittest.TestCase):
                 self.assertEqual(registry.get("ping").execute().payload["response"], "pong")
             finally:
                 sys.path.remove(temp_dir)
+
+    def test_repository_analysis_reports_project_signals(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "app").mkdir()
+            (root / "app" / "main.py").write_text(
+                """
+# TODO: add CLI command support
+from fastapi import FastAPI
+
+app = FastAPI()
+""".strip(),
+                encoding="utf-8",
+            )
+            (root / "requirements.txt").write_text("fastapi>=0.115\nrich>=13.7.1\n", encoding="utf-8")
+            (root / "README.md").write_text("Project notes\n", encoding="utf-8")
+
+            tool = RepositoryAnalysisTool(approved_directories=(root,))
+            result = tool.execute(path=".")
+
+            self.assertTrue(result.success)
+            self.assertIn("Repository analysis for", result.message)
+            self.assertTrue(any(item["name"] == "Python" for item in result.payload["languages"]))
+            self.assertTrue(any(item["name"] == "FastAPI" for item in result.payload["frameworks"]))
+            self.assertEqual(result.payload["summary"]["todo_count"], 1)
+            self.assertTrue(any(dependency["name"] == "fastapi" for dependency in result.payload["dependencies"]))
 
 
 if __name__ == "__main__":
